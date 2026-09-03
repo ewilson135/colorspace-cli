@@ -53,8 +53,17 @@ $ echo '#336699' | node dist/cli.js --to rgb
 Lines that don't parse are reported on stderr and skipped, so one bad line
 in a large palette file doesn't stop the rest from converting.
 
+## Tests
+
+```
+npm test
+```
+
+Runs the conversion tests in `src/color.test.ts` through Node's built-in
+test runner (`node --test`), after compiling with `tsc`.
+
 ## Status
 
-Handles hex, rgb, and hsl. No test suite yet, no alpha channel support, no
-support for other color spaces (Lab, XYZ, oklch) — see the roadmap in the
-project notes for what's planned.
+Handles hex, rgb, and hsl. No alpha channel support, no support for other
+color spaces (Lab, XYZ, oklch) — see the roadmap in the project notes for
+what's planned.
