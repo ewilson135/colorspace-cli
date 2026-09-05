@@ -72,8 +72,37 @@ test("rgb -> hsl -> rgb round-trips within rounding error", () => {
 test("parseColor accepts hex, rgb(), and hsl() forms", () => {
   assert.deepEqual(parseColor("#336699"), { r: 51, g: 102, b: 153 });
   assert.deepEqual(parseColor("rgb(51, 102, 153)"), { r: 51, g: 102, b: 153 });
-  assert.deepEqual(parseColor("rgba(51, 102, 153, 0.5)"), { r: 51, g: 102, b: 153 });
   assert.deepEqual(parseColor("hsl(210, 50%, 40%)"), hslToRgb({ h: 210, s: 50, l: 40 }));
+});
+
+test("parseColor captures alpha from rgba() and hsla()", () => {
+  assert.deepEqual(parseColor("rgba(51, 102, 153, 0.5)"), { r: 51, g: 102, b: 153, a: 0.5 });
+  const withAlpha = parseColor("hsla(210, 50%, 40%, 0.25)");
+  assert.equal(withAlpha.a, 0.25);
+  assert.deepEqual({ r: withAlpha.r, g: withAlpha.g, b: withAlpha.b }, hslToRgb({ h: 210, s: 50, l: 40 }));
+});
+
+test("parseColor clamps out-of-range alpha", () => {
+  assert.equal(parseColor("rgba(0, 0, 0, 2)").a, 1);
+  assert.equal(parseColor("rgba(0, 0, 0, -1)").a, 0);
+});
+
+test("hexToRgb parses 4- and 8-digit hex with alpha", () => {
+  assert.deepEqual(hexToRgb("#f808"), { r: 255, g: 136, b: 0, a: 8 / 15 });
+  assert.deepEqual(hexToRgb("#ff880080"), { r: 255, g: 136, b: 0, a: 128 / 255 });
+});
+
+test("rgbToHex adds an alpha suffix only when alpha is set and not opaque", () => {
+  assert.equal(rgbToHex({ r: 255, g: 136, b: 0 }), "#ff8800");
+  assert.equal(rgbToHex({ r: 255, g: 136, b: 0, a: 1 }), "#ff8800");
+  assert.equal(rgbToHex({ r: 255, g: 136, b: 0, a: 0.5 }), "#ff880080");
+});
+
+test("formatColor renders rgba()/hsla() only when alpha is present", () => {
+  const rgb = { r: 51, g: 102, b: 153, a: 0.5 };
+  assert.equal(formatColor(rgb, "rgb"), "rgba(51, 102, 153, 0.5)");
+  assert.equal(formatColor(rgb, "hsl"), "hsla(210, 50%, 40%, 0.5)");
+  assert.equal(formatColor({ r: 51, g: 102, b: 153 }, "rgb"), "rgb(51, 102, 153)");
 });
 
 test("parseColor rejects unrecognized formats", () => {

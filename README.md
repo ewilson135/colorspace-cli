@@ -22,6 +22,12 @@ formatColor(rgb, "hsl"); // "hsl(32, 100%, 50%)"
 `{ r, g, b }` object. `formatColor` goes the other way, rendering that
 object as hex, rgb, or hsl text.
 
+Alpha is supported everywhere: `#f808` and `#ff880080` (4- and 8-digit
+hex), `rgba(r, g, b, a)`, and `hsla(h, s%, l%, a)` all parse into an
+`{ r, g, b, a }` object with `a` in the 0..1 range. `formatColor` only
+adds the alpha suffix when the input actually carried one, so converting
+an opaque color never adds a stray `, 1` or `ff`.
+
 ## CLI
 
 Build first (requires the TypeScript compiler):
@@ -64,6 +70,6 @@ test runner (`node --test`), after compiling with `tsc`.
 
 ## Status
 
-Handles hex, rgb, and hsl. No alpha channel support, no support for other
-color spaces (Lab, XYZ, oklch) — see the roadmap in the project notes for
+Handles hex, rgb, and hsl, including alpha. No support for other color
+spaces (Lab, XYZ, oklch) yet — see the roadmap in the project notes for
 what's planned.
