@@ -18,7 +18,16 @@ export interface HSL {
   a?: number;
 }
 
-export type ColorFormat = "hex" | "rgb" | "hsl";
+// Lightness is 0..1 (not 0..100, unlike HSL) to match the CSS oklch()
+// syntax; chroma is unitless and unbounded above, hue is degrees.
+export interface OKLCH {
+  l: number;
+  c: number;
+  h: number;
+  a?: number;
+}
+
+export type ColorFormat = "hex" | "rgb" | "hsl" | "oklch";
 
 function clampByte(n: number): number {
   return Math.min(255, Math.max(0, Math.round(n)));
@@ -28,17 +37,26 @@ function clampPercent(n: number): number {
   return Math.min(100, Math.max(0, n));
 }
 
-function clampAlpha(n: number): number {
+function clampUnit(n: number): number {
   return Math.min(1, Math.max(0, n));
+}
+
+function clampAlpha(n: number): number {
+  return clampUnit(n);
+}
+
+function wrapHue(h: number): number {
+  return ((h % 360) + 360) % 360;
+}
+
+function trimTrailingZeros(s: string): string {
+  return s.replace(/0+$/, "").replace(/\.$/, "");
 }
 
 // Renders alpha the way browsers do: as few decimal places as it takes to
 // round-trip a byte value (max 3), so 0.5 stays "0.5" instead of "0.500".
 function formatAlpha(a: number): string {
-  return clampAlpha(a)
-    .toFixed(3)
-    .replace(/0+$/, "")
-    .replace(/\.$/, "");
+  return trimTrailingZeros(clampAlpha(a).toFixed(3));
 }
 
 export function hexToRgb(input: string): RGB {
@@ -136,7 +154,7 @@ function hueToChannel(p: number, q: number, t: number): number {
 }
 
 export function hslToRgb(hsl: HSL): RGB {
-  const h = ((hsl.h % 360) + 360) % 360 / 360;
+  const h = wrapHue(hsl.h) / 360;
   const s = clampPercent(hsl.s) / 100;
   const l = clampPercent(hsl.l) / 100;
 
@@ -159,9 +177,72 @@ export function hslToRgb(hsl: HSL): RGB {
   return rgb;
 }
 
+function srgbToLinear(c: number): number {
+  const cs = clampByte(c) / 255;
+  return cs <= 0.04045 ? cs / 12.92 : Math.pow((cs + 0.055) / 1.055, 2.4);
+}
+
+function linearToSrgb(c: number): number {
+  const v = c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(Math.max(c, 0), 1 / 2.4) - 0.055;
+  return v * 255;
+}
+
+// Coefficients from Björn Ottosson's OKLab reference implementation
+// (https://bottosson.github.io/posts/oklab/). OKLab is the intermediate,
+// Cartesian form; OKLCH is just OKLab read back in polar coordinates,
+// which is what CSS's oklch() actually exposes.
+export function rgbToOklch(rgb: RGB): OKLCH {
+  const r = srgbToLinear(rgb.r);
+  const g = srgbToLinear(rgb.g);
+  const b = srgbToLinear(rgb.b);
+
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+
+  const L = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const bLab = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+
+  const c = Math.sqrt(a * a + bLab * bLab);
+  const h = c === 0 ? 0 : wrapHue((Math.atan2(bLab, a) * 180) / Math.PI);
+
+  return rgb.a === undefined ? { l: L, c, h } : { l: L, c, h, a: rgb.a };
+}
+
+export function oklchToRgb(oklch: OKLCH): RGB {
+  const L = clampUnit(oklch.l);
+  const c = Math.max(0, oklch.c);
+  const h = (wrapHue(oklch.h) * Math.PI) / 180;
+
+  const a = c * Math.cos(h);
+  const bLab = c * Math.sin(h);
+
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * bLab;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * bLab;
+  const s_ = L - 0.0894841775 * a - 1.291485548 * bLab;
+
+  const l = l_ ** 3;
+  const m = m_ ** 3;
+  const s = s_ ** 3;
+
+  const rgb: RGB = {
+    r: clampByte(linearToSrgb(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s)),
+    g: clampByte(linearToSrgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s)),
+    b: clampByte(linearToSrgb(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s)),
+  };
+  if (oklch.a !== undefined) {
+    rgb.a = oklch.a;
+  }
+  return rgb;
+}
+
 const RGB_PATTERN = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/i;
 const HSL_PATTERN = /^hsla?\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)%\s*,\s*(\d+(?:\.\d+)?)%\s*(?:,\s*([\d.]+)\s*)?\)$/i;
 const HEX_PATTERN = /^#?[0-9a-fA-F]{3}$|^#?[0-9a-fA-F]{4}$|^#?[0-9a-fA-F]{6}$|^#?[0-9a-fA-F]{8}$/;
+// oklch(L C H) or oklch(L C H / A). L and A may carry a trailing "%".
+const OKLCH_PATTERN =
+  /^oklch\(\s*([\d.]+)(%)?\s+([\d.]+)\s+(-?[\d.]+)\s*(?:\/\s*([\d.]+)(%)?\s*)?\)$/i;
 
 // Accepts whatever form a color shows up in and normalizes it to RGB,
 // which is the pivot format every conversion in this library goes through.
@@ -192,6 +273,20 @@ export function parseColor(input: string): RGB {
     return hslToRgb(hsl);
   }
 
+  const oklchMatch = text.match(OKLCH_PATTERN);
+  if (oklchMatch) {
+    const [, l, lPercent, c, h, a, aPercent] = oklchMatch;
+    const oklch: OKLCH = {
+      l: lPercent ? Number(l) / 100 : Number(l),
+      c: Number(c),
+      h: Number(h),
+    };
+    if (a !== undefined) {
+      oklch.a = aPercent ? clampAlpha(Number(a) / 100) : clampAlpha(Number(a));
+    }
+    return oklchToRgb(oklch);
+  }
+
   if (HEX_PATTERN.test(text)) {
     return hexToRgb(text);
   }
@@ -214,6 +309,16 @@ export function formatColor(rgb: RGB, format: ColorFormat): string {
         return `hsl(${Math.round(hsl.h)}, ${Math.round(hsl.s)}%, ${Math.round(hsl.l)}%)`;
       }
       return `hsla(${Math.round(hsl.h)}, ${Math.round(hsl.s)}%, ${Math.round(hsl.l)}%, ${formatAlpha(hsl.a)})`;
+    }
+    case "oklch": {
+      const oklch = rgbToOklch(rgb);
+      const l = trimTrailingZeros(oklch.l.toFixed(3));
+      const c = trimTrailingZeros(oklch.c.toFixed(4));
+      const h = trimTrailingZeros(oklch.h.toFixed(1));
+      if (oklch.a === undefined) {
+        return `oklch(${l} ${c} ${h})`;
+      }
+      return `oklch(${l} ${c} ${h} / ${formatAlpha(oklch.a)})`;
     }
   }
 }

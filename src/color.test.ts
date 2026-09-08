@@ -5,6 +5,8 @@ import {
   rgbToHex,
   rgbToHsl,
   hslToRgb,
+  rgbToOklch,
+  oklchToRgb,
   parseColor,
   formatColor,
 } from "./color.js";
@@ -115,4 +117,65 @@ test("formatColor renders each supported format", () => {
   assert.equal(formatColor(rgb, "hex"), "#ff8800");
   assert.equal(formatColor(rgb, "rgb"), "rgb(255, 136, 0)");
   assert.equal(formatColor(rgb, "hsl"), "hsl(32, 100%, 50%)");
+});
+
+test("rgbToOklch maps black and white to the lightness extremes", () => {
+  const black = rgbToOklch({ r: 0, g: 0, b: 0 });
+  assert.equal(black.l, 0);
+  assert.equal(black.c, 0);
+
+  const white = rgbToOklch({ r: 255, g: 255, b: 255 });
+  assert.ok(Math.abs(white.l - 1) < 1e-6);
+  assert.ok(white.c < 1e-6);
+});
+
+test("rgb -> oklch -> rgb round-trips within rounding error", () => {
+  const original = { r: 51, g: 102, b: 153 };
+  const roundTripped = oklchToRgb(rgbToOklch(original));
+  assert.equal(roundTripped.r, original.r);
+  assert.equal(roundTripped.g, original.g);
+  assert.equal(roundTripped.b, original.b);
+});
+
+test("oklchToRgb carries alpha through unchanged", () => {
+  const rgb = oklchToRgb({ l: 0.5, c: 0.1, h: 200, a: 0.4 });
+  assert.equal(rgb.a, 0.4);
+});
+
+test("parseColor accepts oklch() with and without alpha", () => {
+  const rgb = parseColor("oklch(0.7 0.1 200)");
+  assert.deepEqual(rgb, oklchToRgb({ l: 0.7, c: 0.1, h: 200 }));
+
+  const withAlpha = parseColor("oklch(0.7 0.1 200 / 0.5)");
+  assert.equal(withAlpha.a, 0.5);
+});
+
+test("parseColor accepts percentage lightness and alpha in oklch()", () => {
+  const rgb = parseColor("oklch(70% 0.1 200 / 50%)");
+  assert.equal(rgb.a, 0.5);
+  assert.deepEqual(
+    { r: rgb.r, g: rgb.g, b: rgb.b },
+    oklchToRgb({ l: 0.7, c: 0.1, h: 200 }),
+  );
+});
+
+test("formatColor renders oklch() text that reparses back to a close color", () => {
+  const rgb = { r: 51, g: 102, b: 153 };
+  const text = formatColor(rgb, "oklch");
+  assert.match(text, /^oklch\(/);
+  const reparsed = parseColor(text);
+  assert.ok(Math.abs(reparsed.r - rgb.r) <= 1);
+  assert.ok(Math.abs(reparsed.g - rgb.g) <= 1);
+  assert.ok(Math.abs(reparsed.b - rgb.b) <= 1);
+});
+
+test("formatColor adds alpha to oklch() only when present", () => {
+  const opaque = formatColor({ r: 51, g: 102, b: 153 }, "oklch");
+  assert.ok(!opaque.includes("/"));
+  const translucent = formatColor({ r: 51, g: 102, b: 153, a: 0.5 }, "oklch");
+  assert.match(translucent, /\/ 0\.5\)$/);
+});
+
+test("parseColor rejects malformed oklch input", () => {
+  assert.throws(() => parseColor("oklch(not a color)"), /unrecognized color format/);
 });

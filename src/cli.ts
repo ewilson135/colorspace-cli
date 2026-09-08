@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { parseColor, formatColor, type ColorFormat } from "./color.js";
 
 function isColorFormat(value: string): value is ColorFormat {
-  return value === "hex" || value === "rgb" || value === "hsl";
+  return value === "hex" || value === "rgb" || value === "hsl" || value === "oklch";
 }
 
 function readStdin(): Promise<string> {
@@ -20,7 +20,7 @@ function readStdin(): Promise<string> {
 }
 
 function printUsage(): void {
-  console.error("usage: colorspace --to <hex|rgb|hsl> [file]");
+  console.error("usage: colorspace --to <hex|rgb|hsl|oklch> [file]");
   console.error();
   console.error("  reads colors, one per line, from FILE or from stdin if no");
   console.error("  file is given, and prints each one converted to --to");
@@ -44,7 +44,7 @@ function parseArgs(argv: string[]): Args {
     if (arg === "--to") {
       const value = argv[i + 1];
       if (!value || !isColorFormat(value)) {
-        throw new Error(`--to requires one of: hex, rgb, hsl (got "${value ?? ""}")`);
+        throw new Error(`--to requires one of: hex, rgb, hsl, oklch (got "${value ?? ""}")`);
       }
       to = value;
       i++;
@@ -61,7 +61,7 @@ function parseArgs(argv: string[]): Args {
   }
 
   if (!to) {
-    throw new Error("missing required option: --to <hex|rgb|hsl>");
+    throw new Error("missing required option: --to <hex|rgb|hsl|oklch>");
   }
 
   return { to, file };
