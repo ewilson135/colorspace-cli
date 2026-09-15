@@ -34,6 +34,11 @@ The conversion goes through linear sRGB and OKLab, using the matrices
 from Björn Ottosson's OKLab writeup — the same math browsers use for
 `oklch()` colors in CSS.
 
+`parseColorAs(input, format)` skips the auto-detection and insists the
+input be that one format, throwing instead of falling through to another
+format's parser. Useful when you already know what a file contains and
+want a bad line to fail loudly rather than get reinterpreted.
+
 ## CLI
 
 Build first (requires the TypeScript compiler):
@@ -70,6 +75,15 @@ $ echo '#000000' | node dist/cli.js --to oklch
 Lines that don't parse are reported on stderr and skipped, so one bad line
 in a large palette file doesn't stop the rest from converting.
 
+By default `--from` is `auto`: each line's format is detected from its
+syntax. Pass `--from` explicitly to require every line be that one format
+instead — a typo that would otherwise parse as some other format gets
+reported as an error rather than silently converted wrong:
+
+```
+$ node dist/cli.js --to hex --from rgb rgb-only.txt
+```
+
 ## Tests
 
 ```
@@ -81,5 +95,6 @@ test runner (`node --test`), after compiling with `tsc`.
 
 ## Status
 
-Handles hex, rgb, hsl, and oklch, including alpha. No support for Lab or
+Handles hex, rgb, hsl, and oklch, including alpha, with either
+auto-detected or explicit (`--from`) input format. No support for Lab or
 XYZ yet — see the roadmap in the project notes for what's planned.

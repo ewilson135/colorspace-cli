@@ -8,6 +8,7 @@ import {
   rgbToOklch,
   oklchToRgb,
   parseColor,
+  parseColorAs,
   formatColor,
 } from "./color.js";
 
@@ -178,4 +179,18 @@ test("formatColor adds alpha to oklch() only when present", () => {
 
 test("parseColor rejects malformed oklch input", () => {
   assert.throws(() => parseColor("oklch(not a color)"), /unrecognized color format/);
+});
+
+test("parseColorAs parses a color as the named format", () => {
+  assert.deepEqual(parseColorAs("#336699", "hex"), { r: 51, g: 102, b: 153 });
+  assert.deepEqual(parseColorAs("rgb(51, 102, 153)", "rgb"), { r: 51, g: 102, b: 153 });
+  assert.deepEqual(parseColorAs("hsl(210, 50%, 40%)", "hsl"), hslToRgb({ h: 210, s: 50, l: 40 }));
+  assert.deepEqual(parseColorAs("oklch(0.7 0.1 200)", "oklch"), oklchToRgb({ l: 0.7, c: 0.1, h: 200 }));
+});
+
+test("parseColorAs rejects input that doesn't match the named format", () => {
+  assert.throws(() => parseColorAs("rgb(51, 102, 153)", "hex"), /not a valid hex color/);
+  assert.throws(() => parseColorAs("#336699", "rgb"), /not a valid rgb color/);
+  assert.throws(() => parseColorAs("#336699", "hsl"), /not a valid hsl color/);
+  assert.throws(() => parseColorAs("#336699", "oklch"), /not a valid oklch color/);
 });

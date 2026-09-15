@@ -244,54 +244,89 @@ const HEX_PATTERN = /^#?[0-9a-fA-F]{3}$|^#?[0-9a-fA-F]{4}$|^#?[0-9a-fA-F]{6}$|^#
 const OKLCH_PATTERN =
   /^oklch\(\s*([\d.]+)(%)?\s+([\d.]+)\s+(-?[\d.]+)\s*(?:\/\s*([\d.]+)(%)?\s*)?\)$/i;
 
+function parseRgbFunction(text: string): RGB | null {
+  const match = text.match(RGB_PATTERN);
+  if (!match) {
+    return null;
+  }
+  const [, r, g, b, a] = match;
+  const rgb: RGB = {
+    r: clampByte(Number(r)),
+    g: clampByte(Number(g)),
+    b: clampByte(Number(b)),
+  };
+  if (a !== undefined) {
+    rgb.a = clampAlpha(Number(a));
+  }
+  return rgb;
+}
+
+function parseHslFunction(text: string): RGB | null {
+  const match = text.match(HSL_PATTERN);
+  if (!match) {
+    return null;
+  }
+  const [, h, s, l, a] = match;
+  const hsl: HSL = { h: Number(h), s: Number(s), l: Number(l) };
+  if (a !== undefined) {
+    hsl.a = clampAlpha(Number(a));
+  }
+  return hslToRgb(hsl);
+}
+
+function parseOklchFunction(text: string): RGB | null {
+  const match = text.match(OKLCH_PATTERN);
+  if (!match) {
+    return null;
+  }
+  const [, l, lPercent, c, h, a, aPercent] = match;
+  const oklch: OKLCH = {
+    l: lPercent ? Number(l) / 100 : Number(l),
+    c: Number(c),
+    h: Number(h),
+  };
+  if (a !== undefined) {
+    oklch.a = aPercent ? clampAlpha(Number(a) / 100) : clampAlpha(Number(a));
+  }
+  return oklchToRgb(oklch);
+}
+
+function parseHexFunction(text: string): RGB | null {
+  return HEX_PATTERN.test(text) ? hexToRgb(text) : null;
+}
+
 // Accepts whatever form a color shows up in and normalizes it to RGB,
 // which is the pivot format every conversion in this library goes through.
 export function parseColor(input: string): RGB {
   const text = input.trim();
 
-  const rgbMatch = text.match(RGB_PATTERN);
-  if (rgbMatch) {
-    const [, r, g, b, a] = rgbMatch;
-    const rgb: RGB = {
-      r: clampByte(Number(r)),
-      g: clampByte(Number(g)),
-      b: clampByte(Number(b)),
-    };
-    if (a !== undefined) {
-      rgb.a = clampAlpha(Number(a));
-    }
+  const rgb = parseRgbFunction(text) ?? parseHslFunction(text) ?? parseOklchFunction(text) ?? parseHexFunction(text);
+  if (rgb) {
     return rgb;
   }
 
-  const hslMatch = text.match(HSL_PATTERN);
-  if (hslMatch) {
-    const [, h, s, l, a] = hslMatch;
-    const hsl: HSL = { h: Number(h), s: Number(s), l: Number(l) };
-    if (a !== undefined) {
-      hsl.a = clampAlpha(Number(a));
-    }
-    return hslToRgb(hsl);
-  }
-
-  const oklchMatch = text.match(OKLCH_PATTERN);
-  if (oklchMatch) {
-    const [, l, lPercent, c, h, a, aPercent] = oklchMatch;
-    const oklch: OKLCH = {
-      l: lPercent ? Number(l) / 100 : Number(l),
-      c: Number(c),
-      h: Number(h),
-    };
-    if (a !== undefined) {
-      oklch.a = aPercent ? clampAlpha(Number(a) / 100) : clampAlpha(Number(a));
-    }
-    return oklchToRgb(oklch);
-  }
-
-  if (HEX_PATTERN.test(text)) {
-    return hexToRgb(text);
-  }
-
   throw new Error(`unrecognized color format: "${input}"`);
+}
+
+// Same as parseColor, but insists the input actually be the named format
+// instead of guessing. Useful when a caller already knows the format and
+// wants a syntax error surfaced instead of a silent misparse (each format's
+// syntax is distinct enough that auto-detect never actually picks the wrong
+// one, but "insist" is still worth having for validation and clearer errors).
+export function parseColorAs(input: string, format: ColorFormat): RGB {
+  const text = input.trim();
+  const rgb =
+    format === "hex"
+      ? parseHexFunction(text)
+      : format === "rgb"
+        ? parseRgbFunction(text)
+        : format === "hsl"
+          ? parseHslFunction(text)
+          : parseOklchFunction(text);
+  if (rgb) {
+    return rgb;
+  }
+  throw new Error(`not a valid ${format} color: "${input}"`);
 }
 
 export function formatColor(rgb: RGB, format: ColorFormat): string {
