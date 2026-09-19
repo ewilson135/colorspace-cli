@@ -27,7 +27,17 @@ export interface OKLCH {
   a?: number;
 }
 
-export type ColorFormat = "hex" | "rgb" | "hsl" | "oklch";
+// CIE Lab, 0..100 lightness, unbounded a/b (roughly -125..125 for sRGB
+// colors). The channel named "a" is Lab's green-red axis, so alpha lives
+// in "alpha" instead of the "a" every other interface here uses.
+export interface Lab {
+  l: number;
+  a: number;
+  b: number;
+  alpha?: number;
+}
+
+export type ColorFormat = "hex" | "rgb" | "hsl" | "oklch" | "lab";
 
 function clampByte(n: number): number {
   return Math.min(255, Math.max(0, Math.round(n)));
@@ -49,8 +59,13 @@ function wrapHue(h: number): number {
   return ((h % 360) + 360) % 360;
 }
 
+// Also collapses "-0" (from toFixed rounding a tiny negative float, which
+// floating-point rounding produces often for channels that are
+// mathematically zero, e.g. a/b for a gray color run through Lab) down to
+// "0", so output never shows a minus sign in front of nothing.
 function trimTrailingZeros(s: string): string {
-  return s.replace(/0+$/, "").replace(/\.$/, "");
+  const trimmed = s.replace(/0+$/, "").replace(/\.$/, "");
+  return trimmed === "-0" ? "0" : trimmed;
 }
 
 // Renders alpha the way browsers do: as few decimal places as it takes to
@@ -237,12 +252,80 @@ export function oklchToRgb(oklch: OKLCH): RGB {
   return rgb;
 }
 
+// D65 reference white, and the sRGB<->XYZ matrices that go with it
+// (IEC 61966-2-1). XYZ itself isn't exposed as a format here, just the
+// pivot between linear sRGB and Lab, same role OKLab plays for oklch.
+const D65 = { x: 0.95047, y: 1, z: 1.08883 };
+
+function rgbToXyz(rgb: RGB): { x: number; y: number; z: number } {
+  const r = srgbToLinear(rgb.r);
+  const g = srgbToLinear(rgb.g);
+  const b = srgbToLinear(rgb.b);
+  return {
+    x: 0.4124564 * r + 0.3575761 * g + 0.1804375 * b,
+    y: 0.2126729 * r + 0.7151522 * g + 0.072175 * b,
+    z: 0.0193339 * r + 0.119192 * g + 0.9503041 * b,
+  };
+}
+
+function xyzToRgbChannels(x: number, y: number, z: number): { r: number; g: number; b: number } {
+  return {
+    r: clampByte(linearToSrgb(3.2404542 * x - 1.5371385 * y - 0.4985314 * z)),
+    g: clampByte(linearToSrgb(-0.969266 * x + 1.8760108 * y + 0.041556 * z)),
+    b: clampByte(linearToSrgb(0.0556434 * x - 0.2040259 * y + 1.0572252 * z)),
+  };
+}
+
+// CIE standard constants for the Lab piecewise cube root, not just
+// arbitrary tolerances: epsilon is (6/29)^3 and kappa is (29/3)^3.
+const LAB_EPSILON = 216 / 24389;
+const LAB_KAPPA = 24389 / 27;
+
+function labForward(t: number): number {
+  return t > LAB_EPSILON ? Math.cbrt(t) : (LAB_KAPPA * t + 16) / 116;
+}
+
+function labInverse(t: number): number {
+  const t3 = t ** 3;
+  return t3 > LAB_EPSILON ? t3 : (116 * t - 16) / LAB_KAPPA;
+}
+
+export function rgbToLab(rgb: RGB): Lab {
+  const { x, y, z } = rgbToXyz(rgb);
+  const fx = labForward(x / D65.x);
+  const fy = labForward(y / D65.y);
+  const fz = labForward(z / D65.z);
+
+  const l = 116 * fy - 16;
+  const a = 500 * (fx - fy);
+  const b = 200 * (fy - fz);
+
+  return rgb.a === undefined ? { l, a, b } : { l, a, b, alpha: rgb.a };
+}
+
+export function labToRgb(lab: Lab): RGB {
+  const fy = (lab.l + 16) / 116;
+  const fx = fy + lab.a / 500;
+  const fz = fy - lab.b / 200;
+
+  const x = D65.x * labInverse(fx);
+  const y = D65.y * labInverse(fy);
+  const z = D65.z * labInverse(fz);
+
+  const rgb = xyzToRgbChannels(x, y, z);
+  return lab.alpha === undefined ? rgb : { ...rgb, a: lab.alpha };
+}
+
 const RGB_PATTERN = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/i;
 const HSL_PATTERN = /^hsla?\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)%\s*,\s*(\d+(?:\.\d+)?)%\s*(?:,\s*([\d.]+)\s*)?\)$/i;
 const HEX_PATTERN = /^#?[0-9a-fA-F]{3}$|^#?[0-9a-fA-F]{4}$|^#?[0-9a-fA-F]{6}$|^#?[0-9a-fA-F]{8}$/;
 // oklch(L C H) or oklch(L C H / A). L and A may carry a trailing "%".
 const OKLCH_PATTERN =
   /^oklch\(\s*([\d.]+)(%)?\s+([\d.]+)\s+(-?[\d.]+)\s*(?:\/\s*([\d.]+)(%)?\s*)?\)$/i;
+// lab(L a b) or lab(L a b / A). L may carry a trailing "%", but a plain
+// 0..100 number and "0%..100%" mean the same thing for lab()'s L, so
+// there's nothing to rescale - the "%" only needs to be accepted, not read.
+const LAB_PATTERN = /^lab\(\s*(-?[\d.]+)%?\s+(-?[\d.]+)\s+(-?[\d.]+)\s*(?:\/\s*([\d.]+)(%)?\s*)?\)$/i;
 
 function parseRgbFunction(text: string): RGB | null {
   const match = text.match(RGB_PATTERN);
@@ -291,6 +374,19 @@ function parseOklchFunction(text: string): RGB | null {
   return oklchToRgb(oklch);
 }
 
+function parseLabFunction(text: string): RGB | null {
+  const match = text.match(LAB_PATTERN);
+  if (!match) {
+    return null;
+  }
+  const [, l, a, b, alpha, alphaPercent] = match;
+  const lab: Lab = { l: Number(l), a: Number(a), b: Number(b) };
+  if (alpha !== undefined) {
+    lab.alpha = alphaPercent ? clampAlpha(Number(alpha) / 100) : clampAlpha(Number(alpha));
+  }
+  return labToRgb(lab);
+}
+
 function parseHexFunction(text: string): RGB | null {
   return HEX_PATTERN.test(text) ? hexToRgb(text) : null;
 }
@@ -300,7 +396,12 @@ function parseHexFunction(text: string): RGB | null {
 export function parseColor(input: string): RGB {
   const text = input.trim();
 
-  const rgb = parseRgbFunction(text) ?? parseHslFunction(text) ?? parseOklchFunction(text) ?? parseHexFunction(text);
+  const rgb =
+    parseRgbFunction(text) ??
+    parseHslFunction(text) ??
+    parseOklchFunction(text) ??
+    parseLabFunction(text) ??
+    parseHexFunction(text);
   if (rgb) {
     return rgb;
   }
@@ -322,7 +423,9 @@ export function parseColorAs(input: string, format: ColorFormat): RGB {
         ? parseRgbFunction(text)
         : format === "hsl"
           ? parseHslFunction(text)
-          : parseOklchFunction(text);
+          : format === "oklch"
+            ? parseOklchFunction(text)
+            : parseLabFunction(text);
   if (rgb) {
     return rgb;
   }
@@ -354,6 +457,16 @@ export function formatColor(rgb: RGB, format: ColorFormat): string {
         return `oklch(${l} ${c} ${h})`;
       }
       return `oklch(${l} ${c} ${h} / ${formatAlpha(oklch.a)})`;
+    }
+    case "lab": {
+      const lab = rgbToLab(rgb);
+      const l = trimTrailingZeros(lab.l.toFixed(2));
+      const a = trimTrailingZeros(lab.a.toFixed(2));
+      const b = trimTrailingZeros(lab.b.toFixed(2));
+      if (lab.alpha === undefined) {
+        return `lab(${l} ${a} ${b})`;
+      }
+      return `lab(${l} ${a} ${b} / ${formatAlpha(lab.alpha)})`;
     }
   }
 }

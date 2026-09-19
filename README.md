@@ -1,7 +1,7 @@
 # colorspace-cli
 
 A small library and CLI for converting colors between hex, `rgb()`,
-`hsl()`, and `oklch()` notation.
+`hsl()`, `oklch()`, and `lab()` notation.
 
 The usual reason I need this: a design tool exports a palette as hex codes,
 but the CSS or config I'm writing wants `hsl()` so I can tweak lightness by
@@ -18,21 +18,29 @@ formatColor(rgb, "hsl"); // "hsl(32, 100%, 50%)"
 ```
 
 `parseColor` accepts hex (`#f80`, `#ff8800`, with or without the `#`),
-`rgb(r, g, b)`, `hsl(h, s%, l%)`, and `oklch(l c h)`, and normalizes all
-of them to an `{ r, g, b }` object. `formatColor` goes the other way,
-rendering that object as hex, rgb, hsl, or oklch text.
+`rgb(r, g, b)`, `hsl(h, s%, l%)`, `oklch(l c h)`, and `lab(l a b)`, and
+normalizes all of them to an `{ r, g, b }` object. `formatColor` goes
+the other way, rendering that object as hex, rgb, hsl, oklch, or lab text.
 
 Alpha is supported everywhere: `#f808` and `#ff880080` (4- and 8-digit
-hex), `rgba(r, g, b, a)`, `hsla(h, s%, l%, a)`, and `oklch(l c h / a)`
-all parse into an `{ r, g, b, a }` object with `a` in the 0..1 range.
-`formatColor` only adds the alpha suffix when the input actually carried
-one, so converting an opaque color never adds a stray `, 1` or `ff`.
+hex), `rgba(r, g, b, a)`, `hsla(h, s%, l%, a)`, `oklch(l c h / a)`, and
+`lab(l a b / a)` all parse into an `{ r, g, b, a }` object with `a` in
+the 0..1 range. `formatColor` only adds the alpha suffix when the input
+actually carried one, so converting an opaque color never adds a stray
+`, 1` or `ff`.
 
 `oklch(l c h)` follows the CSS syntax: lightness as a plain 0..1 number
 or a percentage (`70%`), chroma as a unitless number, and hue in degrees.
 The conversion goes through linear sRGB and OKLab, using the matrices
 from Björn Ottosson's OKLab writeup — the same math browsers use for
 `oklch()` colors in CSS.
+
+`lab(l a b)` is CIE Lab: lightness 0..100 (as a plain number or a
+percentage — they mean the same thing for `lab()`), and `a`/`b` as
+unitless numbers along the green-red and blue-yellow axes, roughly
+-125..125 for colors that fit in sRGB. The conversion pivots through
+CIE XYZ (D65 white point), which this library doesn't expose as its
+own format since nothing outside the Lab conversion needs it.
 
 `parseColorAs(input, format)` skips the auto-detection and insists the
 input be that one format, throwing instead of falling through to another
@@ -95,6 +103,5 @@ test runner (`node --test`), after compiling with `tsc`.
 
 ## Status
 
-Handles hex, rgb, hsl, and oklch, including alpha, with either
-auto-detected or explicit (`--from`) input format. No support for Lab or
-XYZ yet — see the roadmap in the project notes for what's planned.
+Handles hex, rgb, hsl, oklch, and lab, including alpha, with either
+auto-detected or explicit (`--from`) input format.

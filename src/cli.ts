@@ -9,7 +9,7 @@ import { parseColor, parseColorAs, formatColor, type ColorFormat } from "./color
 type FromFormat = ColorFormat | "auto";
 
 function isColorFormat(value: string): value is ColorFormat {
-  return value === "hex" || value === "rgb" || value === "hsl" || value === "oklch";
+  return value === "hex" || value === "rgb" || value === "hsl" || value === "oklch" || value === "lab";
 }
 
 function isFromFormat(value: string): value is FromFormat {
@@ -26,7 +26,7 @@ function readStdin(): Promise<string> {
 }
 
 function printUsage(): void {
-  console.error("usage: colorspace --to <hex|rgb|hsl|oklch> [--from <hex|rgb|hsl|oklch|auto>] [file]");
+  console.error("usage: colorspace --to <hex|rgb|hsl|oklch|lab> [--from <hex|rgb|hsl|oklch|lab|auto>] [file]");
   console.error();
   console.error("  reads colors, one per line, from FILE or from stdin if no");
   console.error("  file is given, and prints each one converted to --to");
@@ -57,14 +57,14 @@ function parseArgs(argv: string[]): Args {
     if (arg === "--to") {
       const value = argv[i + 1];
       if (!value || !isColorFormat(value)) {
-        throw new Error(`--to requires one of: hex, rgb, hsl, oklch (got "${value ?? ""}")`);
+        throw new Error(`--to requires one of: hex, rgb, hsl, oklch, lab (got "${value ?? ""}")`);
       }
       to = value;
       i++;
     } else if (arg === "--from") {
       const value = argv[i + 1];
       if (!value || !isFromFormat(value)) {
-        throw new Error(`--from requires one of: hex, rgb, hsl, oklch, auto (got "${value ?? ""}")`);
+        throw new Error(`--from requires one of: hex, rgb, hsl, oklch, lab, auto (got "${value ?? ""}")`);
       }
       from = value;
       i++;
@@ -81,7 +81,7 @@ function parseArgs(argv: string[]): Args {
   }
 
   if (!to) {
-    throw new Error("missing required option: --to <hex|rgb|hsl|oklch>");
+    throw new Error("missing required option: --to <hex|rgb|hsl|oklch|lab>");
   }
 
   return { to, from, file };

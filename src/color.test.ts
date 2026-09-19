@@ -7,6 +7,8 @@ import {
   hslToRgb,
   rgbToOklch,
   oklchToRgb,
+  rgbToLab,
+  labToRgb,
   parseColor,
   parseColorAs,
   formatColor,
@@ -186,6 +188,7 @@ test("parseColorAs parses a color as the named format", () => {
   assert.deepEqual(parseColorAs("rgb(51, 102, 153)", "rgb"), { r: 51, g: 102, b: 153 });
   assert.deepEqual(parseColorAs("hsl(210, 50%, 40%)", "hsl"), hslToRgb({ h: 210, s: 50, l: 40 }));
   assert.deepEqual(parseColorAs("oklch(0.7 0.1 200)", "oklch"), oklchToRgb({ l: 0.7, c: 0.1, h: 200 }));
+  assert.deepEqual(parseColorAs("lab(50 20 -30)", "lab"), labToRgb({ l: 50, a: 20, b: -30 }));
 });
 
 test("parseColorAs rejects input that doesn't match the named format", () => {
@@ -193,4 +196,70 @@ test("parseColorAs rejects input that doesn't match the named format", () => {
   assert.throws(() => parseColorAs("#336699", "rgb"), /not a valid rgb color/);
   assert.throws(() => parseColorAs("#336699", "hsl"), /not a valid hsl color/);
   assert.throws(() => parseColorAs("#336699", "oklch"), /not a valid oklch color/);
+  assert.throws(() => parseColorAs("#336699", "lab"), /not a valid lab color/);
+});
+
+test("rgbToLab maps black and white to the lightness extremes", () => {
+  const black = rgbToLab({ r: 0, g: 0, b: 0 });
+  assert.ok(Math.abs(black.l) < 1e-9);
+  assert.ok(Math.abs(black.a) < 1e-6);
+  assert.ok(Math.abs(black.b) < 1e-6);
+
+  const white = rgbToLab({ r: 255, g: 255, b: 255 });
+  assert.ok(Math.abs(white.l - 100) < 1e-3);
+});
+
+test("rgb -> lab -> rgb round-trips within rounding error", () => {
+  const original = { r: 51, g: 102, b: 153 };
+  const roundTripped = labToRgb(rgbToLab(original));
+  assert.equal(roundTripped.r, original.r);
+  assert.equal(roundTripped.g, original.g);
+  assert.equal(roundTripped.b, original.b);
+});
+
+test("labToRgb carries alpha through unchanged", () => {
+  const rgb = labToRgb({ l: 50, a: 20, b: -30, alpha: 0.4 });
+  assert.equal(rgb.a, 0.4);
+});
+
+test("parseColor accepts lab() with and without alpha", () => {
+  const rgb = parseColor("lab(50 20 -30)");
+  assert.deepEqual(rgb, labToRgb({ l: 50, a: 20, b: -30 }));
+
+  const withAlpha = parseColor("lab(50 20 -30 / 0.5)");
+  assert.equal(withAlpha.a, 0.5);
+});
+
+test("parseColor accepts percentage lightness and alpha in lab()", () => {
+  const rgb = parseColor("lab(50% 20 -30 / 50%)");
+  assert.equal(rgb.a, 0.5);
+  assert.deepEqual({ r: rgb.r, g: rgb.g, b: rgb.b }, labToRgb({ l: 50, a: 20, b: -30 }));
+});
+
+test("formatColor renders lab() text that reparses back to a close color", () => {
+  const rgb = { r: 51, g: 102, b: 153 };
+  const text = formatColor(rgb, "lab");
+  assert.match(text, /^lab\(/);
+  const reparsed = parseColor(text);
+  assert.ok(Math.abs(reparsed.r - rgb.r) <= 1);
+  assert.ok(Math.abs(reparsed.g - rgb.g) <= 1);
+  assert.ok(Math.abs(reparsed.b - rgb.b) <= 1);
+});
+
+test("formatColor adds alpha to lab() only when present", () => {
+  const opaque = formatColor({ r: 51, g: 102, b: 153 }, "lab");
+  assert.ok(!opaque.includes("/"));
+  const translucent = formatColor({ r: 51, g: 102, b: 153, a: 0.5 }, "lab");
+  assert.match(translucent, /\/ 0\.5\)$/);
+});
+
+test("parseColor rejects malformed lab input", () => {
+  assert.throws(() => parseColor("lab(not a color)"), /unrecognized color format/);
+});
+
+test("formatColor never renders a bare negative zero for a/b near zero", () => {
+  // Gray channels should be mathematically 0, but floating-point rounding
+  // through the XYZ pivot commonly lands a hair below zero instead.
+  const text = formatColor({ r: 128, g: 128, b: 128 }, "lab");
+  assert.doesNotMatch(text, /-0(?:[^.\d]|$)/);
 });
