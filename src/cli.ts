@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { parseColor, parseColorAs, formatColor, type ColorFormat } from "./color.js";
 
 type FromFormat = ColorFormat | "auto";
+type OutputFormat = "text" | "json";
 
 function isColorFormat(value: string): value is ColorFormat {
   return value === "hex" || value === "rgb" || value === "hsl" || value === "oklch" || value === "lab";
@@ -14,6 +15,10 @@ function isColorFormat(value: string): value is ColorFormat {
 
 function isFromFormat(value: string): value is FromFormat {
   return value === "auto" || isColorFormat(value);
+}
+
+function isOutputFormat(value: string): value is OutputFormat {
+  return value === "text" || value === "json";
 }
 
 function readStdin(): Promise<string> {
@@ -26,7 +31,9 @@ function readStdin(): Promise<string> {
 }
 
 function printUsage(): void {
-  console.error("usage: colorspace --to <hex|rgb|hsl|oklch|lab> [--from <hex|rgb|hsl|oklch|lab|auto>] [file]");
+  console.error(
+    "usage: colorspace --to <hex|rgb|hsl|oklch|lab> [--from <hex|rgb|hsl|oklch|lab|auto>] [--output <text|json>] [file]",
+  );
   console.error();
   console.error("  reads colors, one per line, from FILE or from stdin if no");
   console.error("  file is given, and prints each one converted to --to");
@@ -35,21 +42,30 @@ function printUsage(): void {
   console.error("  by its syntax. Pass an explicit format to reject any line");
   console.error("  that isn't that format, instead of silently trying others.");
   console.error();
+  console.error("  --output defaults to text, printing one \"input -> output\"");
+  console.error("  line per color and reporting bad lines on stderr. Pass json");
+  console.error("  to instead print one JSON array on stdout, each element");
+  console.error('  either { "input", "output" } or, for a line that failed to');
+  console.error('  parse, { "input", "error" }.');
+  console.error();
   console.error("  examples:");
   console.error("    colorspace --to hsl palette.txt");
   console.error("    echo '#ff8800' | colorspace --to rgb");
   console.error("    colorspace --to hex --from rgb rgb-only.txt");
+  console.error("    colorspace --to hsl --output json palette.txt");
 }
 
 interface Args {
   to: ColorFormat;
   from: FromFormat;
+  output: OutputFormat;
   file: string | null;
 }
 
 function parseArgs(argv: string[]): Args {
   let to: ColorFormat | null = null;
   let from: FromFormat = "auto";
+  let output: OutputFormat = "text";
   let file: string | null = null;
 
   for (let i = 0; i < argv.length; i++) {
@@ -68,6 +84,13 @@ function parseArgs(argv: string[]): Args {
       }
       from = value;
       i++;
+    } else if (arg === "--output") {
+      const value = argv[i + 1];
+      if (!value || !isOutputFormat(value)) {
+        throw new Error(`--output requires one of: text, json (got "${value ?? ""}")`);
+      }
+      output = value;
+      i++;
     } else if (arg === "--help" || arg === "-h") {
       printUsage();
       process.exit(0);
@@ -84,7 +107,7 @@ function parseArgs(argv: string[]): Args {
     throw new Error("missing required option: --to <hex|rgb|hsl|oklch|lab>");
   }
 
-  return { to, from, file };
+  return { to, from, output, file };
 }
 
 async function main(): Promise<void> {
@@ -109,13 +132,27 @@ async function main(): Promise<void> {
   }
 
   let hadError = false;
-  for (const line of lines) {
-    try {
-      const rgb = args.from === "auto" ? parseColor(line) : parseColorAs(line, args.from);
-      console.log(`${line} -> ${formatColor(rgb, args.to)}`);
-    } catch (err) {
-      hadError = true;
-      console.error(`skipping "${line}": ${(err as Error).message}`);
+
+  if (args.output === "json") {
+    const results = lines.map((line) => {
+      try {
+        const rgb = args.from === "auto" ? parseColor(line) : parseColorAs(line, args.from);
+        return { input: line, output: formatColor(rgb, args.to) };
+      } catch (err) {
+        hadError = true;
+        return { input: line, error: (err as Error).message };
+      }
+    });
+    console.log(JSON.stringify(results, null, 2));
+  } else {
+    for (const line of lines) {
+      try {
+        const rgb = args.from === "auto" ? parseColor(line) : parseColorAs(line, args.from);
+        console.log(`${line} -> ${formatColor(rgb, args.to)}`);
+      } catch (err) {
+        hadError = true;
+        console.error(`skipping "${line}": ${(err as Error).message}`);
+      }
     }
   }
 

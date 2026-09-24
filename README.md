@@ -92,6 +92,26 @@ reported as an error rather than silently converted wrong:
 $ node dist/cli.js --to hex --from rgb rgb-only.txt
 ```
 
+By default `--output` is `text`, printing the `input -> output` lines shown
+above. Pass `--output json` to get one JSON array on stdout instead, which is
+easier for another program to consume than scraping text. Lines that failed
+to parse show up as `{ "input", "error" }` elements in the same array rather
+than only going to stderr:
+
+```
+$ node dist/cli.js --to hsl --output json palette.txt
+[
+  {
+    "input": "#ff8800",
+    "output": "hsl(32, 100%, 50%)"
+  },
+  {
+    "input": "not-a-color",
+    "error": "unrecognized color format: \"not-a-color\""
+  }
+]
+```
+
 ## Tests
 
 ```
@@ -104,4 +124,5 @@ test runner (`node --test`), after compiling with `tsc`.
 ## Status
 
 Handles hex, rgb, hsl, oklch, and lab, including alpha, with either
-auto-detected or explicit (`--from`) input format.
+auto-detected or explicit (`--from`) input format, and either text or
+JSON (`--output`) results.
