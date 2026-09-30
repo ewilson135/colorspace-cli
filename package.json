@@ -1,15 +1,28 @@
 {
   "name": "colorspace-cli",
   "version": "0.1.0",
-  "description": "Convert colors between hex, rgb, and hsl from the command line",
+  "description": "Convert colors between hex, rgb, hsl, oklch, and lab from the command line",
+  "keywords": ["color", "hex", "rgb", "hsl", "oklch", "lab", "cli"],
   "type": "module",
   "main": "./dist/color.js",
+  "types": "./dist/color.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/color.d.ts",
+      "default": "./dist/color.js"
+    }
+  },
   "bin": {
     "colorspace": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*"
+  ],
   "scripts": {
     "build": "tsc",
-    "test": "tsc && node --test dist"
+    "test": "tsc && node --test dist",
+    "prepublishOnly": "npm test"
   },
   "engines": {
     "node": ">=18"

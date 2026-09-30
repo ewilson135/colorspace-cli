@@ -112,6 +112,14 @@ $ node dist/cli.js --to hsl --output json palette.txt
 ]
 ```
 
+## Publishing
+
+`prepublishOnly` compiles and runs the tests before `npm publish`, so a
+broken build can't go out. The `files` list in `package.json` ships only
+`dist`, minus the compiled test files; `src` stays out of the tarball.
+The package exposes `dist/color.js` as its entry point and `colorspace`
+as the command.
+
 ## Tests
 
 ```
